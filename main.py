@@ -6,9 +6,9 @@ import tkinter.font as tkFont
 from tkinter import ttk
 from tkinter import messagebox
 from tkinter import simpledialog
-# from pydrive.auth import GoogleAuth
-# from pydrive.drive import GoogleDrive
-
+from tkinter import Tk, Label, Entry, Button
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
 # Função para criar a tabela
 def criar_tabela():
@@ -398,22 +398,34 @@ def criar_campos_formulario(container, labels, valores_iniciais=None):
 
 
 #Fazer upload pro GOOGLE DRIVE------
-# def upload_drive(filename):
-#     try:
-#         # Autenticação com Google Drive
-#         gauth = GoogleAuth()
-#         gauth.LocalWebserverAuth()  # Abre um navegador para a autenticação
-#         drive = GoogleDrive(gauth)
 
-#         # Cria o arquivo no Google Drive
-#         arquivo_drive = drive.CreateFile({'title': filename})
-#         arquivo_drive.SetContentFile(filename)
-#         arquivo_drive.Upload()
+def upload_drive(root):
+    try:
+        # Configura o GoogleAuth para usar o arquivo client_secrets.json
+        gauth = GoogleAuth()
+        gauth.LoadCredentialsFile("mycreds.txt")
+
+        if not gauth.credentials:
+            # Define o arquivo client_secrets.json para autenticação
+            gauth.LoadClientConfigFile("client_secrets.json")
+            gauth.LocalWebserverAuth()
+            gauth.SaveCredentialsFile("mycreds.txt")
+
+        drive = GoogleDrive(gauth)
+
+        # Faz o upload do arquivo
+        file_upload = "banco_dados.db"
+        file_drive = drive.CreateFile({'title': file_upload})
+        file_drive.SetContentFile(file_upload)
+        file_drive.Upload()
+
+        # Mensagem de sucesso
+        messagebox.showinfo("Sucesso", "Arquivo enviado para o Google Drive com sucesso!")
+    except Exception as e:
+        # Mensagem de erro
+        messagebox.showerror("Erro", f"Ocorreu um erro: {e}")
+
         
-#         messagebox.showinfo("Backup Concluído", "O backup foi salvo com sucesso no Google Drive!")
-#     except Exception as e:
-#         messagebox.showerror("Erro de Backup", f"Falha ao fazer upload para o Google Drive: {e}")
-
 # Criando a Interface com Tkinter------------------------------------------------------------------
 
 # Função para centralizar a janela e definir seu tamanho com base na resolução do monitor
@@ -424,7 +436,7 @@ def centralizar_janela(root, largura_desejada, altura_desejada):
 
     # Calcular as coordenadas para centralizar a janela
     x = (largura_tela - largura_desejada) // 2
-    y = (altura_tela - altura_desejada) // 2
+    y = (altura_tela - altura_desejada) // 6
 
     # Definir o tamanho e posição da janela
     root.geometry(f"{largura_desejada}x{altura_desejada}+{x}+{y}")
@@ -435,9 +447,16 @@ def criar_interface():
     root.title("Cadastro Castra Móvel")
     
     largura_desejada = int(root.winfo_screenwidth() * 0.3)
-    altura_desejada = int(root.winfo_screenheight() * 0.8)
+    altura_desejada = int(root.winfo_screenheight() * 0.89)
     centralizar_janela(root, largura_desejada, altura_desejada)
     
+    # root_google = Tk()
+    # root_google.title("Upload para Google Drive")
+    # Label(root_google, text="E-mail do Google:").grid(row=0, column=0, padx=10, pady=10)
+    # email_entry = Entry(root_google, width=30)
+    # email_entry.grid(row=0, column=1, padx=10, pady=10)
+    # Button(root_google, text="Fazer Backup", command=lambda: upload_drive(email_entry.get())).grid(row=1, column=1, padx=10, pady=10)
+
     frame_principal = tk.Frame(root)
     frame_principal.pack(fill=tk.BOTH, expand=True)
     
@@ -492,6 +511,7 @@ def criar_interface():
     tk.Button(frame_conteudo, text="Visualizar Dados", command=visualizar_dados, width=30).grid(row=len(labels)+2, columnspan=2, pady=5, sticky="e")
     tk.Button(frame_conteudo, text="Editar Usuário", command=editar_usuario, width=30).grid(row=len(labels)+3, columnspan=2, pady=5, sticky="e")
     tk.Button(frame_conteudo, text="Exportar para Excel", command=exportar_para_excel, width=30).grid(row=len(labels)+4, column=1, pady=5,  sticky="e")
+    tk.Button(frame_conteudo, text="Fazer upload Google Drive", command=lambda: upload_drive(root), width=30).grid(row=len(labels)+5, column=1, pady=5,  sticky="e")
     
     # Inicia o loop da interface
     root.mainloop()
@@ -499,4 +519,3 @@ def criar_interface():
 
 criar_tabela()
 criar_interface()
-# upload_drive('banco_dados.db')
