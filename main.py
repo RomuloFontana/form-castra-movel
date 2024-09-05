@@ -3,6 +3,8 @@ import openpyxl
 import pandas as pd
 import tkinter as tk
 import tkinter.font as tkFont
+import os
+from tkinter import filedialog
 from tkinter import ttk
 from tkinter import messagebox
 from tkinter import simpledialog
@@ -103,8 +105,8 @@ def exportar_para_excel():
     usuarios = listar_usuarios()
     df = pd.DataFrame(usuarios, columns=['ID', 'Data', 'Nome', 'Contato', 'RG', 'CPF', 'NIS', 'Endereço','Bairro', 'Nome do Pet',
                                         'Espécie', 'Cor', 'Peso', 'Idade', 'Porte', 'Raça', 'Sexo', 'Observações'])
-    df.to_excel('usuarios.xlsx', index=False, engine='openpyxl')
-    messagebox.showinfo("Sucesso", "Dados exportados para 'usuarios.xlsx' com sucesso!")
+    df.to_excel('dados_castra_movel.xlsx', index=False, engine='openpyxl')
+    messagebox.showinfo("Sucesso", "Dados exportados para 'dados_castra_movel' com sucesso!")
 
 
 # Função para visualizar os dados em uma nova janela-------
@@ -173,7 +175,7 @@ def editar_usuario():
     if id_usuario is None:
         return
     
-    conexao = sqlite3.connect('banco_dados.db')
+    conexao = sqlite3.connect('banco_dados.db', timeout=5)
     cursor = conexao.cursor()
     cursor.execute('''SELECT * FROM usuarios WHERE id = ?''', (id_usuario,))
     usuario = cursor.fetchone()
@@ -186,10 +188,22 @@ def editar_usuario():
     janela_edicao = tk.Toplevel()
     janela_edicao.title("Editar Usuário")
 
+    # Pegando a posição da janela principal (criar_interface)
+
+    janela_principal = janela_edicao.master # Pega a janela principal como mestre
+    pos_x_main = janela_principal.winfo_x() # Posição x da janela principal
+    pos_y_main = janela_principal.winfo_y() # Posição y da janela principal
+
     largura_desejada = int(janela_edicao.winfo_screenwidth() * 0.3)
-    altura_desejada = int(janela_edicao.winfo_screenheight() * 1.0)
+    altura_desejada = int(janela_edicao.winfo_screenheight() * 0.8)
     centralizar_janela(janela_edicao, largura_desejada, altura_desejada)
     
+    pos_x_edicao = pos_x_main - largura_desejada - 10
+    pos_y_edicao = pos_y_main
+
+    # Definindo a geometria da janela de edição
+    janela_edicao.geometry(f"{largura_desejada}x{altura_desejada}+{pos_x_edicao}+{pos_y_edicao}")
+
     frame_principal = tk.Frame(janela_edicao)
     frame_principal.pack(fill=tk.BOTH, expand=True)
     
@@ -209,11 +223,11 @@ def editar_usuario():
     frame_conteudo = tk.Frame(canvas)
     canvas.create_window((0, 0), window=frame_conteudo, anchor="nw")
 
-    labels = ["Data:", "Nome:", "Contato:", "RG:", "CPF:", "NIS:", "Endereço:", "Bairro", "Nome do Pet:", 
-              "Espécie:", "Cor:", "Peso:", "Idade:", "Porte:", "Raça:", "Sexo:", "Observações:"]
+    labels = ["ID:","Data:", "Nome:", "Contato:", "RG:", "CPF:", "NIS:", "Endereço:", "Bairro", "Nome do Pet:", 
+            "Espécie:", "Cor:", "Peso:", "Idade:", "Porte:", "Raça:", "Sexo:", "Observações:"]
     
     # Criando dicionário de valores iniciais
-    valores_iniciais = dict(zip(labels, usuario[1:]))  # usuario[1:] porque o primeiro elemento é o ID
+    valores_iniciais = dict(zip(labels, usuario))  # usuario[1:] porque o primeiro elemento é o ID
     
     entries = criar_campos_formulario(frame_conteudo, labels, valores_iniciais)
     
@@ -224,10 +238,28 @@ def editar_usuario():
                 dados.append(entries[label].get("1.0", tk.END).strip())
             else:
                 dados.append(entries[label].get().strip())
+        novo_id = dados[0] # O novo ID está no primeiro campo
+        dados_sem_id = dados[1:]  # Remover o ID dos dados que serão atualizados
         
-        # Atualizar o usuário no banco de dados
-        atualizar_usuario(id_usuario, *dados)
+        if novo_id != str(id_usuario):
+            # Verifica se o novo ID já existe
+            conexao = sqlite3.connect('banco_dados.db', timeout=5)
+            cursor = conexao.cursor()
+            cursor.execute('''SELECT id FROM usuarios WHERE id = ?''',(novo_id,))
+            id_existente = cursor.fetchone()
+
+            if id_existente:
+                messagebox.showerror("Erro", "ID já existe. Escolha um ID diferente.")
+                conexao.close()
+                return
+
+            alterar_id_usuario(id_usuario, novo_id)
+            conexao.close()
+
+        # Atualizar os dados do usuário no banco de dados (exceto o ID)
+        atualizar_usuario(novo_id, *dados_sem_id)
         janela_edicao.destroy()
+
 
     # Botões
     tk.Button(frame_conteudo, text="Salvar", command=salvar_edicao, width=30).grid(row=len(labels), column=0, columnspan=2, pady=10)
@@ -266,8 +298,129 @@ def limpar_campos(entries):
         elif isinstance(entry, tk.Text):
             entry.delete('1.0', tk.END)  # Limpa o texto para Text
 
-#---------
+#----------------------
 
+def importar_dados():
+    # Abre uma caixa de diálogo para selecionar o arquivo
+
+    caminho_arquivo = tk.filedialog.askopenfilename(
+        filetypes=[("Arquivos de Banco de Dados", "*.db"), ("Arquivos Excel", "*.xlsx")]
+    )
+
+    if not caminho_arquivo:
+        return
+    
+    if caminho_arquivo.endswith(".db"):
+        importar_db(caminho_arquivo)
+    elif caminho_arquivo.endswith(".xlsx"):
+        importar_excel(caminho_arquivo)
+
+def importar_db(caminho_arquivo):
+    try:
+        # Conecta-se ao banco de dados que será importado
+        conexao = sqlite3.connect(caminho_arquivo)
+        cursor = conexao.cursor()
+        cursor.execute('''SELECT * FROM usuarios ''')
+        usuarios = cursor.fetchall()
+        conexao.close()
+
+        # Conecta-se ao banco de dados principal onde os dados serão acrescentados
+        conexao_destino = sqlite3.connect("banco_dados.db")
+        cursor_destino = conexao_destino.cursor()
+
+        # Obtém todos os IDs existentes no banco de dados principal
+        cursor_destino.execute('''SELECT id FROM usuarios''')
+        ids_existentes = set(id_[0] for id_ in cursor_destino.fetchall())
+
+        for usuario in usuarios:
+            id_original = usuarios[0]
+
+            # Verifica se o ID já existe
+            if id_original in ids_existentes:
+                novo_id = max(ids_existentes) + 1
+                while novo_id in ids_existentes:
+                    novo_id += 1
+                ids_existentes.add(novo_id)
+            else:
+                novo_id = id_original
+
+        # Acrescenta os dados, usando INSERT OR IGNORE para evitar duplicatas
+        for usuario in usuarios:
+            cursor_destino.execute('''INSERT OR IGNORE INTO usuarios
+                                (id, data, nome, contato, rg, cpf, nis, endereço, bairro, nome_pet, especie, cor, peso, idade, porte, raca, sexo, observacoes)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                                    usuario)
+        
+        conexao_destino.commit()
+        conexao_destino.close()
+        messagebox.showinfo("Sucesso", "Dados importados com sucesso!")
+    except Exception as e:
+        messagebox.showerror("Erro", f"Ocorreu um erro ao importar o banco de dados: {e}")
+#-----
+
+def importar_excel(caminho_arquivo):
+    try:
+        # Lê o arquivo Excel
+        df = pd.read_excel(caminho_arquivo, engine="openpyxl")
+        df = df.fillna('') # Substitui valores nulos por string vazia
+
+        # Abre conexão com o banco de dados SQLite
+        conexao_destino = sqlite3.connect("banco_dados.db")
+        cursor_destino = conexao_destino.cursor()
+
+        # Obtém todos os IDs existentes no banco de dados principal
+        cursor_destino.execute('''SELECT id FROM usuarios''')
+        ids_existentes = set(id_[0] for id_ in cursor_destino.fetchall())
+
+        # Itera pelas linhas do DataFrame
+        for index, row in df.iterrows():
+            id_original = row["ID"]
+            
+            # Verifica se o ID já existe
+            if id_original in ids_existentes:
+                novo_id = max(ids_existentes) + 1
+                while novo_id in ids_existentes:
+                    novo_id += 1
+                ids_existentes.add(novo_id)
+            else:
+                novo_id = id_original
+
+
+            cursor_destino.execute('''INSERT INTO usuarios 
+                                    (id, data, nome, contato, rg, cpf, nis, endereço, bairro, nome_pet, especie, cor, peso, idade, porte, raca, sexo, observacoes) 
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                                    (novo_id, row['Data'], row['Nome'], row['Contato'], row['RG'], row['CPF'], row['NIS'], row['Endereço'], 
+                                    row['Bairro'], row['Nome do Pet'], row['Espécie'], row['Cor'], row['Peso'], row['Idade'], row['Porte'], 
+                                    row['Raça'], row['Sexo'], row['Observações']))
+        
+        conexao_destino.commit()
+        conexao_destino.close()
+        messagebox.showinfo("Sucesso", "Dados importados com sucesso!")
+    except Exception as e:
+        messagebox.showerror("Erro", f"Ocorreu um erro ao importar o arquivo Excel: {e}")
+
+#---------
+def alterar_id_usuario(id_old, id_new):
+    try:
+        # Conectar ao banco de dados
+        conexao = sqlite3.connect("banco_dados.db")
+        cursor = conexao.cursor()
+
+        # Atualizar o ID do usuário
+        cursor.execute('''
+                    UPDATE usuarios
+                    SET id = ?
+                    WHERE id = ?
+                    ''', (id_new, id_old))
+        # Confirmar as alterações
+        conexao.commit()
+        conexao.close()
+
+    except Exception as e:
+        # Exibir mensagem de erro
+        messagebox.showerror("Erro", f"Não foi possível alterar o ID: {e}")
+
+#---------
 def criar_campos_formulario(container, labels, valores_iniciais=None):
     entries = {}
     
@@ -512,6 +665,7 @@ def criar_interface():
     tk.Button(frame_conteudo, text="Editar Usuário", command=editar_usuario, width=30).grid(row=len(labels)+3, columnspan=2, pady=5, sticky="e")
     tk.Button(frame_conteudo, text="Exportar para Excel", command=exportar_para_excel, width=30).grid(row=len(labels)+4, column=1, pady=5,  sticky="e")
     tk.Button(frame_conteudo, text="Fazer upload Google Drive", command=lambda: upload_drive(root), width=30).grid(row=len(labels)+5, column=1, pady=5,  sticky="e")
+    tk.Button(frame_conteudo, text="Importar Dados", command=importar_dados, width=30).grid(row=len(labels)+6, column=1, pady=5, sticky="e")
     
     # Inicia o loop da interface
     root.mainloop()
