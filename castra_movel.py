@@ -4,6 +4,7 @@ import pandas as pd
 import tkinter as tk
 import tkinter.font as tkFont
 import os
+import sys
 from tkinter import filedialog
 from tkinter import ttk
 from tkinter import messagebox
@@ -105,9 +106,26 @@ def exportar_para_excel():
     usuarios = listar_usuarios()
     df = pd.DataFrame(usuarios, columns=['ID', 'Data', 'Nome', 'Contato', 'RG', 'CPF', 'NIS', 'Endereço','Bairro', 'Nome do Pet',
                                         'Espécie', 'Cor', 'Peso', 'Idade', 'Porte', 'Raça', 'Sexo', 'Observações'])
-    df.to_excel('dados_castra_movel.xlsx', index=False, engine='openpyxl')
-    messagebox.showinfo("Sucesso", "Dados exportados para 'dados_castra_movel' com sucesso!")
+    
+    # Janela para o usuário escolher o local e o nome do arquivo
+    caminho_arquivo = filedialog.asksaveasfilename(defaultextension=".xlsx",
+                                                filetypes=[("Excel Files", "*.xlsx")],
+                                                title="Salvar como")
 
+    if not caminho_arquivo:  # Se o usuário cancelar, encerra a função
+        return
+
+    # Verifica se o arquivo já existe
+    if os.path.exists(caminho_arquivo):
+        resposta = messagebox.askyesno("Arquivo já existe", "O arquivo já existe. Deseja sobrescrevê-lo?")
+        if not resposta: # Se o usuário escolher "Não", encerra a função
+            return
+
+    try:
+        df.to_excel(caminho_arquivo, index=False, engine='openpyxl')
+        messagebox.showinfo("Sucesso", f"Dados exportados para '{caminho_arquivo}' com sucesso!")
+    except Exception as e:
+        messagebox.showerror("Erro", f"Ocorreu um erro ao exportar os dados: {e}")
 
 # Função para visualizar os dados em uma nova janela-------
 def visualizar_dados():
@@ -134,7 +152,8 @@ def visualizar_dados():
 
     # Criando o Treeview com ligação às barras de rolagem
     colunas = ["ID", "Data", "Nome", "Contato", "RG", "CPF", "NIS", "Endereço","Bairro", "Nome do Pet",
-              "Espécie", "Cor", "Peso", "Idade", "Porte", "Raça", "Sexo", "Observações"]
+            "Espécie", "Cor", "Peso", "Idade", "Porte", "Raça", "Sexo", "Observações"]
+    
     tree = ttk.Treeview(frame, columns=colunas, show="headings", yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
     
     # Ligando as barras de rolagem ao Treeview
@@ -143,10 +162,81 @@ def visualizar_dados():
     
     tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-    # Configurando as colunas do Treeview
+    # Criando função de ordenação
+    from datetime import datetime
+
+    def ordernar_por_coluna(coluna, reverse):
+
+        # Função para converter valores da coluna Data em formato datetime para ordenação
+        def convert_to_date(data_str):
+            try:
+                return datetime.strptime(data_str, "%d/%m/%Y") # Converter string de data para formato datetime
+            except (ValueError, TypeError):
+                return datetime.min # Retorna uma data mínima para evitar erro e colocá-la no início da lista
+        
+        # Função para ordenar as colunas (alfanumérica e numérica)
+        def convert_to_number(valor):
+            try:
+                return int(valor) # Tenta converter para número inteiro
+            except ValueError:
+                try:
+                    return float(valor)  # Se falhar, tenta float
+                except ValueError:
+                    return valor.lower() # Se falhar, mantém como string, insensível a maiúsculas/minúsculas
+        
+        if coluna == "Data":
+            # Se for a coluna de Data, usar a função de conversão de datas
+            lista_usuarios = [(convert_to_date(tree.set(k, coluna)), k) for k in tree.get_children("")]
+        else:
+            # Para outras colunas, usar a função de conversão numérica
+            lista_usuarios = [(convert_to_number(tree.set(k, coluna)), k) for k in tree.get_children("")]
+        
+        lista_usuarios.sort(reverse=reverse)
+
+        for index, (val, k) in enumerate(lista_usuarios):
+            tree.move(k, "", index)
+        tree.heading(coluna, command=lambda: ordernar_por_coluna(coluna, not reverse))
+
+    # Função para filtrar os dados pelo nome
+    def filtrar_dados():
+        query = entry_filtro.get().lower()
+        for item in tree.get_children():
+            tree.delete(item)
+        
+        for usuario in usuarios:
+            if query in str(usuario[2]).lower(): # Filtra pelo campo 'Nome' (coluna 2)
+                tree.insert("", tk.END, values=usuario)
+    
+    def resetar_filtro():
+        entry_filtro.delete(0, tk.END)
+        for item in tree.get_children():
+            tree.delete(item)
+        for usuario in usuarios:
+            tree.insert("", tk.END, values=usuario)
+
+        # Adicionando um Frame para a barra de pesquisa
+    frame_filtro = tk.Frame(janela_visualizacao)
+    frame_filtro.pack(pady=10)
+
+    label_filtro = tk.Label(frame_filtro, text= "Filtrar por Nome:")
+    label_filtro.pack(side=tk.LEFT, padx=10)
+
+    entry_filtro = tk.Entry(frame_filtro)
+    entry_filtro.pack(side=tk.LEFT, padx=10)
+
+    btn_filtro = tk.Button(frame_filtro, text="Filtrar", command=filtrar_dados)
+    btn_filtro.pack(side=tk.LEFT, padx=10)
+
+    # Botão para resetar a filtragem
+
+    btn_resetar = tk.Button(frame_filtro, text="Resetar", command=resetar_filtro)
+    btn_resetar.pack(side=tk.LEFT, padx=10)
+
+
+    # Configurando as colunas do Treeview com a função de ordenação
     fonte = tkFont.Font()
     for coluna in colunas:
-        tree.heading(coluna, text=coluna)
+        tree.heading(coluna, text=coluna, command=lambda c=coluna: ordernar_por_coluna(c, False))
         # Calcular a largura com base no cabeçalho
         largura = fonte.measure(coluna)
         tree.column(coluna, width=largura, anchor=tk.CENTER)
@@ -255,9 +345,11 @@ def editar_usuario():
 
             alterar_id_usuario(id_usuario, novo_id)
             conexao.close()
+            
 
         # Atualizar os dados do usuário no banco de dados (exceto o ID)
         atualizar_usuario(novo_id, *dados_sem_id)
+        reordenar_ids()
         janela_edicao.destroy()
 
 
@@ -312,8 +404,10 @@ def importar_dados():
     
     if caminho_arquivo.endswith(".db"):
         importar_db(caminho_arquivo)
+        reordenar_ids()
     elif caminho_arquivo.endswith(".xlsx"):
         importar_excel(caminho_arquivo)
+        reordenar_ids()
 
 def importar_db(caminho_arquivo):
     try:
@@ -548,6 +642,16 @@ def criar_campos_formulario(container, labels, valores_iniciais=None):
     return entries
 
 
+def resource_path(relative_path):
+    "Obtenha o caminho absoluto do arquivo, considerando o pacote do PyInstaller."
+    try:
+        # Se o aplicativo estiver congelado (PyInstaller), usa o caminho do diretório temporário
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # Se não estiver congelado, usa o diretório atual
+        base_path = os.path.dirname(__file__)
+    return os.path.join(base_path, relative_path)
+client_secrets_path = resource_path("client_secrets.json")
 
 
 #Fazer upload pro GOOGLE DRIVE------
@@ -598,18 +702,13 @@ def centralizar_janela(root, largura_desejada, altura_desejada):
 def criar_interface():
     root = tk.Tk()
     root.title("Cadastro Castra Móvel")
+    icon_path = resource_path("castra.ico")
+    root.iconbitmap(icon_path)
     
     largura_desejada = int(root.winfo_screenwidth() * 0.3)
     altura_desejada = int(root.winfo_screenheight() * 0.89)
     centralizar_janela(root, largura_desejada, altura_desejada)
     
-    # root_google = Tk()
-    # root_google.title("Upload para Google Drive")
-    # Label(root_google, text="E-mail do Google:").grid(row=0, column=0, padx=10, pady=10)
-    # email_entry = Entry(root_google, width=30)
-    # email_entry.grid(row=0, column=1, padx=10, pady=10)
-    # Button(root_google, text="Fazer Backup", command=lambda: upload_drive(email_entry.get())).grid(row=1, column=1, padx=10, pady=10)
-
     frame_principal = tk.Frame(root)
     frame_principal.pack(fill=tk.BOTH, expand=True)
     
@@ -630,7 +729,7 @@ def criar_interface():
     canvas.create_window((0, 0), window=frame_conteudo, anchor="nw")
 
     labels = ["Data:", "Nome:", "Contato:", "RG:", "CPF:", "NIS:", "Endereço:", "Bairro", "Nome do Pet:", 
-              "Espécie:", "Cor:", "Peso:", "Idade:", "Porte:", "Raça:", "Sexo:", "Observações:"]
+            "Espécie:", "Cor:", "Peso:", "Idade:", "Porte:", "Raça:", "Sexo:", "Observações:"]
     
     entries = criar_campos_formulario(frame_conteudo, labels)
     

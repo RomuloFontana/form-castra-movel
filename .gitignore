@@ -2,3 +2,7 @@ client_secrets.json
 dados_castra_movel.xlsx
 mycreds.txt
 usuarios.xlsx
+dist
+build
+castra_movel.spec
+castra.ico
