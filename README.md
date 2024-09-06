@@ -1,1 +1,1 @@
-App em python para preenchimento de dados tipo formulário usando o CRUD e com possibilidade de exportar para .xslx
+Aplicativo em python com função CRUD e com interface para preenchimento de formulário de animais para castração. 
